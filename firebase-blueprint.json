@@ -1,0 +1,93 @@
+{
+  "entities": {
+    "Board": {
+      "title": "Board",
+      "description": "A set of categories and paired comparisons for 3 charts: Present, Focus, and Achieve",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "userId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 100,
+          "minLength": 1
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "categories": {
+          "type": "array"
+        },
+        "presentPairs": {
+          "type": "object"
+        },
+        "focusPairs": {
+          "type": "object"
+        },
+        "achievePairs": {
+          "type": "object"
+        }
+      },
+      "required": ["id", "userId", "title", "createdAt", "updatedAt"]
+    },
+    "Snapshot": {
+      "title": "Snapshot",
+      "description": "Periodic snapshots taken to track evolution of the 3 pie charts over time",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "boardId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "userId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "date": {
+          "type": "string",
+          "maxLength": 30
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "presentDist": {
+          "type": "object"
+        },
+        "focusDist": {
+          "type": "object"
+        },
+        "achieveDist": {
+          "type": "object"
+        }
+      },
+      "required": ["id", "boardId", "userId", "date", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/boards/{boardId}": {
+      "schema": {
+        "$ref": "#/entities/Board"
+      },
+      "description": "Collection of user boards"
+    },
+    "/boards/{boardId}/snapshots/{snapshotId}": {
+      "schema": {
+        "$ref": "#/entities/Snapshot"
+      },
+      "description": "Historical snapshots for each board"
+    }
+  }
+}

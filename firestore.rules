@@ -1,0 +1,61 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default deny all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Boards collection
+    match /boards/{boardId} {
+      allow get: if isSignedIn() && (existing().userId == request.auth.uid);
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn()
+        && isValidId(boardId)
+        && incoming().userId == request.auth.uid
+        && incoming().title is string
+        && incoming().title.size() > 0
+        && incoming().title.size() <= 100;
+      allow update: if isSignedIn()
+        && existing().userId == request.auth.uid
+        && incoming().userId == existing().userId
+        && incoming().title is string
+        && incoming().title.size() > 0
+        && incoming().title.size() <= 100;
+      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
+
+      // Snapshots subcollection
+      match /snapshots/{snapshotId} {
+        allow get, list: if isSignedIn() && isOwner(get(/databases/$(database)/documents/boards/$(boardId)).data.userId);
+        allow create: if isSignedIn()
+          && isValidId(snapshotId)
+          && isOwner(get(/databases/$(database)/documents/boards/$(boardId)).data.userId)
+          && incoming().userId == request.auth.uid
+          && incoming().boardId == boardId;
+        allow delete: if isSignedIn()
+          && isOwner(get(/databases/$(database)/documents/boards/$(boardId)).data.userId);
+        allow update: if false; // Snapshots are immutable once recorded
+      }
+    }
+  }
+}

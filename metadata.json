@@ -1,0 +1,6 @@
+{
+  "name": "Triad Priority & Alignment - 3-Pie Paired Comparison",
+  "description": "Evaluate and track your balance across Present, Focus, and Target pie charts using intuitive paired comparison sliders and historical progression.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
