@@ -6,6 +6,10 @@ export interface Category {
 
 export type ChartType = 'present' | 'focus' | 'achieve';
 
+export const CHART_TYPES: ChartType[] = ['present', 'focus', 'achieve'];
+
+export type SnapshotIntervals = Record<ChartType, number>;
+
 export interface CategoryDistribution {
   categoryId: string;
   name: string;
@@ -24,6 +28,7 @@ export interface BoardSnapshot {
   focusDist: Record<string, number>;
   achieveDist: Record<string, number>;
   categories: Category[];
+  capturedCharts?: ChartType[]; // which charts this check-in recorded
 }
 
 export interface Board {
@@ -37,6 +42,8 @@ export interface Board {
   focusPairs: Record<string, number>;
   achievePairs: Record<string, number>;
   snapshots: BoardSnapshot[];
+  // How often (in days) a snapshot should be taken for each chart
+  snapshotIntervals: SnapshotIntervals;
 }
 
 export interface FirebaseSyncConfig {

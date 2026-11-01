@@ -35,6 +35,13 @@
         },
         "achievePairs": {
           "type": "object"
+        },
+        "snapshots": {
+          "type": "array"
+        },
+        "snapshotIntervals": {
+          "type": "object",
+          "description": "Check-in cadence in days for each chart: present, focus, achieve"
         }
       },
       "required": ["id", "userId", "title", "createdAt", "updatedAt"]
@@ -71,6 +78,10 @@
         },
         "achieveDist": {
           "type": "object"
+        },
+        "capturedCharts": {
+          "type": "array",
+          "description": "Charts recorded by this check-in: present, focus, achieve"
         }
       },
       "required": ["id", "boardId", "userId", "date", "createdAt"]

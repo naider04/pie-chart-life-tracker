@@ -1,9 +1,46 @@
-import { Board, BoardSnapshot, Category } from '../types';
+import { Board, BoardSnapshot, Category, ChartType, CHART_TYPES, SnapshotIntervals } from '../types';
 import { calculateDistribution } from '../utils/ahp';
 import { syncBoardToFirestore } from './firebase';
 
 const STORAGE_KEY = 'triad_priorities_boards_v1';
 const ACTIVE_BOARD_KEY = 'triad_priorities_active_board_id';
+
+export const DEFAULT_SNAPSHOT_INTERVAL_DAYS = 2;
+export const MIN_SNAPSHOT_INTERVAL_DAYS = 1;
+export const MAX_SNAPSHOT_INTERVAL_DAYS = 365;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+export const DEFAULT_SNAPSHOT_INTERVALS: SnapshotIntervals = {
+  present: DEFAULT_SNAPSHOT_INTERVAL_DAYS,
+  focus: DEFAULT_SNAPSHOT_INTERVAL_DAYS,
+  achieve: DEFAULT_SNAPSHOT_INTERVAL_DAYS,
+};
+
+export function clampSnapshotInterval(days: number): number {
+  if (!Number.isFinite(days)) return DEFAULT_SNAPSHOT_INTERVAL_DAYS;
+  return Math.min(
+    MAX_SNAPSHOT_INTERVAL_DAYS,
+    Math.max(MIN_SNAPSHOT_INTERVAL_DAYS, Math.round(days))
+  );
+}
+
+/**
+ * Fills in fields introduced after earlier app versions (e.g. per-chart
+ * snapshot intervals) so old locally-stored boards keep working.
+ */
+export function normalizeBoard(board: Board): Board {
+  const intervals = board.snapshotIntervals || ({} as Partial<SnapshotIntervals>);
+  return {
+    ...board,
+    snapshots: board.snapshots || [],
+    snapshotIntervals: {
+      present: clampSnapshotInterval(intervals.present ?? DEFAULT_SNAPSHOT_INTERVAL_DAYS),
+      focus: clampSnapshotInterval(intervals.focus ?? DEFAULT_SNAPSHOT_INTERVAL_DAYS),
+      achieve: clampSnapshotInterval(intervals.achieve ?? DEFAULT_SNAPSHOT_INTERVAL_DAYS),
+    },
+  };
+}
 
 export function createEmptyBoard(title = 'New Priority Board'): Board {
   const id = 'board_' + Math.random().toString(36).substring(2, 10);
@@ -18,6 +55,7 @@ export function createEmptyBoard(title = 'New Priority Board'): Board {
     focusPairs: {},
     achievePairs: {},
     snapshots: [],
+    snapshotIntervals: { ...DEFAULT_SNAPSHOT_INTERVALS },
   };
 }
 
@@ -27,7 +65,7 @@ export function loadBoards(): Board[] {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
+        return parsed.map(normalizeBoard);
       }
     }
   } catch (err) {
@@ -57,20 +95,63 @@ export function setActiveBoardId(id: string): void {
 }
 
 /**
- * Checks if 2 days (48 hours) have elapsed since the last snapshot.
+ * Returns the timestamp of the most recent snapshot that recorded the given chart.
+ * Legacy snapshots without `capturedCharts` are treated as having captured every chart.
  */
-export function isSnapshotDue(board: Board): boolean {
-  if (!board.snapshots || board.snapshots.length === 0) return true;
-  const latest = board.snapshots[board.snapshots.length - 1];
-  const elapsedMs = Date.now() - latest.timestamp;
-  const twoDaysMs = 2 * 24 * 60 * 60 * 1000;
-  return elapsedMs >= twoDaysMs;
+export function getChartLastCapturedAt(
+  board: Pick<Board, 'snapshots'>,
+  chart: ChartType
+): number | null {
+  let latest: number | null = null;
+  for (const snap of board.snapshots || []) {
+    const captured = snap.capturedCharts ?? CHART_TYPES;
+    if (captured.includes(chart)) {
+      if (latest === null || snap.timestamp > latest) latest = snap.timestamp;
+    }
+  }
+  return latest;
 }
 
 /**
- * Creates a new historical snapshot representing the current distributions of all 3 charts.
+ * Checks if the stored interval (days) for a single chart has elapsed since its
+ * last snapshot.
  */
-export function captureSnapshot(board: Board, note?: string): BoardSnapshot {
+export function isChartSnapshotDue(
+  board: Board,
+  chart: ChartType,
+  now = Date.now()
+): boolean {
+  const intervalDays = clampSnapshotInterval(
+    board.snapshotIntervals?.[chart] ?? DEFAULT_SNAPSHOT_INTERVAL_DAYS
+  );
+  const last = getChartLastCapturedAt(board, chart);
+  if (last === null) return true;
+  return now - last >= intervalDays * DAY_MS;
+}
+
+/**
+ * Returns every chart whose own check-in interval has elapsed.
+ */
+export function getDueCharts(board: Board, now = Date.now()): ChartType[] {
+  return CHART_TYPES.filter(chart => isChartSnapshotDue(board, chart, now));
+}
+
+/**
+ * Checks if any of the 3 charts is due for a snapshot.
+ */
+export function isSnapshotDue(board: Board): boolean {
+  return getDueCharts(board).length > 0;
+}
+
+/**
+ * Creates a new historical snapshot. The distributions of all 3 charts are
+ * stored, but `capturedCharts` records which ones this check-in was for.
+ */
+export function captureSnapshot(
+  board: Board,
+  note?: string,
+  charts: ChartType[] = CHART_TYPES
+): BoardSnapshot {
   const presentDist = calculateDistribution(board.categories, board.presentPairs);
   const focusDist = calculateDistribution(board.categories, board.focusPairs);
   const achieveDist = calculateDistribution(board.categories, board.achievePairs);
@@ -101,6 +182,7 @@ export function captureSnapshot(board: Board, note?: string): BoardSnapshot {
     focusDist: focusMap,
     achieveDist: achieveMap,
     categories: [...board.categories],
+    capturedCharts: charts.length > 0 ? [...charts] : [...CHART_TYPES],
   };
 }
 

@@ -4,16 +4,17 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Board, Category, ChartType } from './types';
+import { Board, Category, ChartType, CHART_TYPES, FirebaseSyncConfig } from './types';
 import {
   loadBoards,
   saveBoards,
   getActiveBoardId,
   setActiveBoardId,
   createEmptyBoard,
-  isSnapshotDue,
   captureSnapshot,
   persistBoard,
+  getDueCharts,
+  clampSnapshotInterval,
 } from './services/storage';
 import { calculateDistribution, setPairValue } from './utils/ahp';
 import { PieChart } from './components/PieChart';
@@ -24,7 +25,16 @@ import { PrintReport } from './components/PrintReport';
 import { BoardSelector } from './components/BoardSelector';
 import { Tooltip } from './components/Tooltip';
 import { Printer, Cloud, Sparkles, SlidersHorizontal, History, TrendingUp } from 'lucide-react';
-import { initFirebase, saveFirebaseConfig, getSavedFirebaseConfig } from './services/firebase';
+import {
+  initFirebase,
+  saveFirebaseConfig,
+  getSavedFirebaseConfig,
+  loadBoardsFromFirestore,
+  syncBoardToFirestore,
+  getFirebaseUser,
+} from './services/firebase';
+
+type FirebaseStatus = 'idle' | 'connecting' | 'connected' | 'error';
 
 export default function App() {
   const [boards, setBoards] = useState<Board[]>([]);
@@ -35,7 +45,45 @@ export default function App() {
   const [isPrintOpen, setIsPrintOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'compare' | 'timeline'>('compare');
   const [showCloudModal, setShowCloudModal] = useState(false);
-  const [firebaseProjectInput, setFirebaseProjectInput] = useState('');
+  const [firebaseConfigInput, setFirebaseConfigInput] = useState<FirebaseSyncConfig>({});
+  const [firebaseStatus, setFirebaseStatus] = useState<FirebaseStatus>('idle');
+  const [firebaseError, setFirebaseError] = useState('');
+
+  // Pull cloud boards and reconcile them with the locally stored ones
+  const reconcileWithCloud = async (localBoards: Board[]) => {
+    const cloudBoards = await loadBoardsFromFirestore();
+    if (!cloudBoards) return;
+    if (cloudBoards.length === 0) {
+      setFirebaseStatus('connected');
+      return;
+    }
+
+    const merged = new Map(localBoards.map(b => [b.id, b]));
+    const cloudIds = new Set(cloudBoards.map(b => b.id));
+
+    for (const cloudBoard of cloudBoards) {
+      const local = merged.get(cloudBoard.id);
+      if (!local || (cloudBoard.updatedAt || 0) > (local.updatedAt || 0)) {
+        merged.set(cloudBoard.id, cloudBoard);
+      }
+    }
+
+    const nextBoards = Array.from(merged.values());
+    setBoards(nextBoards);
+    saveBoards(nextBoards);
+    setActiveBoardIdState(prev =>
+      nextBoards.some(b => b.id === prev) ? prev : nextBoards[0]?.id || ''
+    );
+
+    // Upload any boards that only exist locally
+    localBoards
+      .filter(board => !cloudIds.has(board.id))
+      .forEach(board => {
+        syncBoardToFirestore(board).catch(() => {});
+      });
+
+    setFirebaseStatus('connected');
+  };
 
   // Initial load
   useEffect(() => {
@@ -51,8 +99,15 @@ export default function App() {
 
     const conf = getSavedFirebaseConfig();
     if (conf?.projectId) {
-      setFirebaseProjectInput(conf.projectId);
-      initFirebase(conf);
+      setFirebaseConfigInput(conf);
+      setFirebaseStatus('connecting');
+      initFirebase(conf)
+        .then(ok => {
+          if (ok) return reconcileWithCloud(loaded);
+          setFirebaseStatus('error');
+          setFirebaseError('Could not connect with the saved Firebase config.');
+        })
+        .catch(() => setFirebaseStatus('error'));
     }
   }, []);
 
@@ -93,9 +148,9 @@ export default function App() {
     return calculateDistribution(activeBoard.categories, activeBoard.achievePairs);
   }, [activeBoard]);
 
-  const snapshotDue = useMemo(() => {
-    if (!activeBoard) return false;
-    return isSnapshotDue(activeBoard);
+  const dueCharts = useMemo(() => {
+    if (!activeBoard) return [] as ChartType[];
+    return getDueCharts(activeBoard);
   }, [activeBoard]);
 
   // Board operations
@@ -247,13 +302,28 @@ export default function App() {
     setBoards(nextBoards);
   };
 
-  // Snapshot operations (every 2 days)
-  const handleCaptureSnapshot = (note?: string) => {
+  // Snapshot operations (independent per-chart cadence)
+  const handleCaptureSnapshot = (note?: string, charts: ChartType[] = CHART_TYPES) => {
     if (!activeBoard) return;
-    const snap = captureSnapshot(activeBoard, note);
+    const targets = charts.length > 0 ? charts : [...CHART_TYPES];
+    const snap = captureSnapshot(activeBoard, note, targets);
     const updatedBoard: Board = {
       ...activeBoard,
       snapshots: [...(activeBoard.snapshots || []), snap],
+      updatedAt: Date.now(),
+    };
+    const nextBoards = persistBoard(updatedBoard, boards);
+    setBoards(nextBoards);
+  };
+
+  const handleUpdateSnapshotInterval = (chart: ChartType, days: number) => {
+    if (!activeBoard) return;
+    const updatedBoard: Board = {
+      ...activeBoard,
+      snapshotIntervals: {
+        ...activeBoard.snapshotIntervals,
+        [chart]: clampSnapshotInterval(days),
+      },
       updatedAt: Date.now(),
     };
     const nextBoards = persistBoard(updatedBoard, boards);
@@ -272,15 +342,39 @@ export default function App() {
     setBoards(nextBoards);
   };
 
-  const handleSaveFirebaseConfig = () => {
-    if (!firebaseProjectInput.trim()) {
-      saveFirebaseConfig(null);
-    } else {
-      const conf = { projectId: firebaseProjectInput.trim() };
-      saveFirebaseConfig(conf);
-      initFirebase(conf);
+  const handleSaveFirebaseConfig = async () => {
+    setFirebaseError('');
+    const cleaned: FirebaseSyncConfig = {};
+    (Object.keys(firebaseConfigInput) as (keyof FirebaseSyncConfig)[]).forEach(key => {
+      const value = firebaseConfigInput[key];
+      if (typeof value === 'string' && value.trim()) {
+        cleaned[key] = value.trim();
+      }
+    });
+
+    if (!cleaned.projectId || !cleaned.apiKey || !cleaned.appId) {
+      setFirebaseError('Project ID, API Key and App ID are required.');
+      return;
     }
+
+    saveFirebaseConfig(cleaned);
+    setFirebaseStatus('connecting');
+    const ok = await initFirebase(cleaned);
+    if (!ok) {
+      setFirebaseStatus('error');
+      setFirebaseError('Could not initialize Firebase. Check the project config.');
+      return;
+    }
+
+    await reconcileWithCloud(boards);
     setShowCloudModal(false);
+  };
+
+  const handleDisconnectFirebase = () => {
+    saveFirebaseConfig(null);
+    setFirebaseConfigInput({});
+    setFirebaseStatus('idle');
+    setFirebaseError('');
   };
 
   if (!activeBoard) {
@@ -339,7 +433,7 @@ export default function App() {
               </button>
             </Tooltip>
 
-            <Tooltip content="Timeline & 2-day historical check-ins" position="bottom">
+            <Tooltip content="Timeline & per-chart historical check-ins" position="bottom">
               <button
                 type="button"
                 onClick={() => setActiveTab('timeline')}
@@ -351,7 +445,7 @@ export default function App() {
               >
                 <History className="w-3.5 h-3.5" />
                 <span>Timeline</span>
-                {snapshotDue && (
+                {dueCharts.length > 0 && (
                   <span className="w-2 h-2 rounded-full bg-amber-400 absolute -top-0.5 -right-0.5 ring-2 ring-neutral-900" />
                 )}
               </button>
@@ -415,7 +509,9 @@ export default function App() {
               <TimelineHistory
                 snapshots={activeBoard.snapshots || []}
                 categories={activeBoard.categories}
-                isDue={snapshotDue}
+                intervals={activeBoard.snapshotIntervals}
+                dueCharts={dueCharts}
+                onUpdateInterval={handleUpdateSnapshotInterval}
                 onCaptureSnapshot={handleCaptureSnapshot}
                 onDeleteSnapshot={handleDeleteSnapshot}
               />
@@ -578,36 +674,106 @@ export default function App() {
       {/* Cloud Sync Modal */}
       {showCloudModal && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-neutral-900 border border-neutral-700 rounded-2xl p-5 max-w-sm w-full shadow-2xl animate-in fade-in zoom-in-95">
+          <div className="bg-neutral-900 border border-neutral-700 rounded-2xl p-5 max-w-md w-full shadow-2xl animate-in fade-in zoom-in-95 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center gap-2 mb-3">
               <Cloud className="w-5 h-5 text-indigo-400" />
               <h4 className="font-semibold text-neutral-100 text-sm">Firebase Cloud Sync</h4>
             </div>
-            <p className="text-xs text-neutral-400 mb-4">
-              Your boards and periodic check-in snapshots are saved locally. Enter your Firebase project ID to enable real-time cloud synchronization.
+            <p className="text-xs text-neutral-400 mb-3">
+              Boards and snapshots are always saved locally. Paste your Firebase web app config to
+              sync them to Firestore. You are signed in anonymously, so no login screen is needed.
             </p>
-            <input
-              type="text"
-              value={firebaseProjectInput}
-              onChange={e => setFirebaseProjectInput(e.target.value)}
-              placeholder="Firebase Project ID..."
-              className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3.5 py-2 text-sm text-neutral-100 placeholder:text-neutral-500 focus:outline-none focus:border-indigo-500 mb-4"
-            />
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setShowCloudModal(false)}
-                className="px-3 py-1.5 rounded-lg text-xs font-medium text-neutral-400 hover:text-neutral-200"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveFirebaseConfig}
-                className="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold"
-              >
-                Save
-              </button>
+
+            <div className="mb-3 flex items-center gap-1.5 text-[11px]">
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${
+                  firebaseStatus === 'connected'
+                    ? 'bg-emerald-400'
+                    : firebaseStatus === 'connecting'
+                    ? 'bg-amber-400 animate-pulse'
+                    : firebaseStatus === 'error'
+                    ? 'bg-rose-400'
+                    : 'bg-neutral-500'
+                }`}
+              />
+              <span className="text-neutral-400">
+                {firebaseStatus === 'connected'
+                  ? `Connected${getFirebaseUser()?.uid ? ` as ${getFirebaseUser()!.uid.slice(0, 10)}…` : ''}`
+                  : firebaseStatus === 'connecting'
+                  ? 'Connecting…'
+                  : firebaseStatus === 'error'
+                  ? 'Connection error'
+                  : 'Not connected'}
+              </span>
+            </div>
+
+            <div className="space-y-2 mb-3">
+              {(
+                [
+                  { key: 'projectId', label: 'Project ID', required: true, placeholder: 'my-app-12345' },
+                  { key: 'apiKey', label: 'API Key', required: true, placeholder: 'AIza...' },
+                  { key: 'authDomain', label: 'Auth Domain', placeholder: 'my-app.firebaseapp.com' },
+                  { key: 'appId', label: 'App ID', required: true, placeholder: '1:1234567890:web:abcdef' },
+                  { key: 'storageBucket', label: 'Storage Bucket', placeholder: 'my-app.appspot.com' },
+                  { key: 'messagingSenderId', label: 'Messaging Sender ID', placeholder: '1234567890' },
+                  { key: 'firestoreDatabaseId', label: 'Firestore Database ID', placeholder: '(default)' },
+                ] as const
+              ).map(field => (
+                <label key={field.key} className="block">
+                  <span className="block text-[11px] font-medium text-neutral-400 mb-1">
+                    {field.label}
+                    {'required' in field && field.required ? (
+                      <span className="text-rose-400"> *</span>
+                    ) : (
+                      <span className="text-neutral-600"> (optional)</span>
+                    )}
+                  </span>
+                  <input
+                    type="text"
+                    value={firebaseConfigInput[field.key] || ''}
+                    onChange={e =>
+                      setFirebaseConfigInput(prev => ({ ...prev, [field.key]: e.target.value }))
+                    }
+                    placeholder={field.placeholder}
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-1.5 text-xs text-neutral-100 placeholder:text-neutral-600 focus:outline-none focus:border-indigo-500"
+                  />
+                </label>
+              ))}
+            </div>
+
+            {firebaseError && (
+              <p className="text-[11px] text-rose-400 mb-3">{firebaseError}</p>
+            )}
+
+            <div className="flex items-center justify-between gap-2">
+              {firebaseStatus === 'connected' || getSavedFirebaseConfig() ? (
+                <button
+                  type="button"
+                  onClick={handleDisconnectFirebase}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium text-rose-400 hover:text-rose-300"
+                >
+                  Disconnect
+                </button>
+              ) : (
+                <span />
+              )}
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCloudModal(false)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium text-neutral-400 hover:text-neutral-200"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveFirebaseConfig}
+                  disabled={firebaseStatus === 'connecting'}
+                  className="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-semibold"
+                >
+                  {firebaseStatus === 'connecting' ? 'Connecting…' : 'Save & Connect'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
