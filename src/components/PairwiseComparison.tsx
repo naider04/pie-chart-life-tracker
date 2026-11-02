@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { Category, ChartType } from '../types';
 import { DraggableSplitBar } from './DraggableSplitBar';
 import { getPairValue } from '../utils/ahp';
-import { RotateCcw, Copy, ArrowRightLeft, Target } from 'lucide-react';
+import { RotateCcw, Copy, ArrowRightLeft, Target, Settings2 } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 
 interface PairwiseComparisonProps {
@@ -16,6 +16,7 @@ interface PairwiseComparisonProps {
   selectedCategoryId: string | null;
   onSelectCategory: (categoryId: string) => void;
   clickOrder: string[]; // Category IDs in order of last clicked (most recent first)
+  onOpenCategoryOptions?: () => void;
 }
 
 export const PairwiseComparison: React.FC<PairwiseComparisonProps> = ({
@@ -29,6 +30,7 @@ export const PairwiseComparison: React.FC<PairwiseComparisonProps> = ({
   selectedCategoryId,
   onSelectCategory,
   clickOrder,
+  onOpenCategoryOptions,
 }) => {
   // Determine active target category (last clicked category, or first category by default)
   const activeFocusCategory = useMemo(() => {
@@ -136,40 +138,6 @@ export const PairwiseComparison: React.FC<PairwiseComparisonProps> = ({
           </Tooltip>
         </div>
       </div>
-
-      {/* Focus Category Selector Strip */}
-      {categories.length >= 2 && activeFocusCategory && (
-        <div className="flex items-center justify-between gap-2 py-2 px-1 border-b border-neutral-800/50 shrink-0">
-          <div className="flex items-center gap-1.5 text-xs text-neutral-400">
-            <Target className="w-3.5 h-3.5 text-indigo-400" />
-            <span className="font-semibold text-neutral-200">Comparing:</span>
-          </div>
-
-          <div className="flex items-center gap-1.5 overflow-x-auto py-0.5">
-            {categories.map(cat => {
-              const isActive = cat.id === activeFocusCategory.id;
-              return (
-                <button
-                  key={cat.id}
-                  type="button"
-                  onClick={() => onSelectCategory(cat.id)}
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all shrink-0 ${
-                    isActive
-                      ? 'bg-neutral-800 ring-2 ring-indigo-500/80 text-white shadow-sm'
-                      : 'bg-neutral-950 text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900 border border-neutral-800'
-                  }`}
-                >
-                  <span
-                    className="w-2 h-2 rounded-full shrink-0 shadow-sm"
-                    style={{ backgroundColor: cat.color }}
-                  />
-                  <span>{cat.name}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
 
       {/* Sliders Area - Only shows pairs for the active category compared to others, sorted with recently clicked on top */}
       <div className="flex-1 min-h-0 overflow-y-auto pt-3 pr-1 space-y-3">

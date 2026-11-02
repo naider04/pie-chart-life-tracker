@@ -22,9 +22,10 @@ import { PairwiseComparison } from './components/PairwiseComparison';
 import { CategoryManager } from './components/CategoryManager';
 import { TimelineHistory } from './components/TimelineHistory';
 import { PrintReport } from './components/PrintReport';
+import { CategoryOptionsModal } from './components/CategoryOptionsModal';
 import { BoardSelector } from './components/BoardSelector';
 import { Tooltip } from './components/Tooltip';
-import { Printer, Cloud, Sparkles, SlidersHorizontal, History, TrendingUp } from 'lucide-react';
+import { Printer, Cloud, Sparkles, SlidersHorizontal, History, TrendingUp, Settings2 } from 'lucide-react';
 import {
   initFirebase,
   saveFirebaseConfig,
@@ -44,6 +45,7 @@ export default function App() {
   const [clickOrder, setClickOrder] = useState<string[]>([]);
   const [isPrintOpen, setIsPrintOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'compare' | 'timeline'>('compare');
+  const [showCategoryOptionsModal, setShowCategoryOptionsModal] = useState(false);
   const [showCloudModal, setShowCloudModal] = useState(false);
   const [firebaseConfigInput, setFirebaseConfigInput] = useState<FirebaseSyncConfig>({});
   const [firebaseStatus, setFirebaseStatus] = useState<FirebaseStatus>('idle');
@@ -131,6 +133,11 @@ export default function App() {
     setSelectedCategoryId(catId);
     setClickOrder(prev => [catId, ...prev.filter(id => id !== catId)]);
   };
+
+  const selectedCategory = useMemo(() => {
+    if (!activeBoard || !selectedCategoryId) return null;
+    return activeBoard.categories.find(c => c.id === selectedCategoryId) || null;
+  }, [activeBoard, selectedCategoryId]);
 
   // Distributions for each of the 3 pie charts
   const presentDist = useMemo(() => {
@@ -488,6 +495,10 @@ export default function App() {
             onUpdateCategory={handleUpdateCategory}
             onRemoveCategory={handleRemoveCategory}
             onClearAll={handleClearAllCategories}
+            onEditCategory={(cat) => {
+              handleSelectCategory(cat.id);
+              setShowCategoryOptionsModal(true);
+            }}
           />
 
           {/* Active Mode: Sliders OR Timeline */}
@@ -503,6 +514,7 @@ export default function App() {
               selectedCategoryId={selectedCategoryId}
               onSelectCategory={handleSelectCategory}
               clickOrder={clickOrder}
+              onOpenCategoryOptions={() => setShowCategoryOptionsModal(true)}
             />
           ) : (
             <div className="flex-1 min-h-0 overflow-y-auto">
@@ -521,40 +533,29 @@ export default function App() {
 
         {/* Right Column: The 3 Pie Charts + Shared Category Legend (55% on desktop) */}
         <section className="lg:col-span-7 flex flex-col h-full min-h-0 gap-2.5 overflow-hidden">
-          {/* Single Shared Category Legend Bar (Categories are not repeated across each pie chart) */}
+          {/* Selected Category Options Bar */}
           <div className="bg-neutral-900/60 border border-neutral-800 rounded-2xl px-3 py-2 flex items-center justify-between gap-2 shrink-0">
-            <div className="flex items-center gap-1.5 shrink-0">
+            <div className="flex items-center gap-2">
               <span className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider">
-                Categories:
+                SELECTED:
               </span>
-            </div>
-
-            <div className="flex items-center gap-2 overflow-x-auto py-0.5 flex-1 justify-end">
-              {activeBoard.categories.length === 0 ? (
-                <span className="text-xs text-neutral-500">None added yet</span>
+              {selectedCategory ? (
+                <Tooltip content={`Edit "${selectedCategory.name}" (change name, color, delete)`} position="bottom">
+                  <button
+                    type="button"
+                    onClick={() => setShowCategoryOptionsModal(true)}
+                    className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/40 text-xs font-semibold shadow-sm transition-all cursor-pointer animate-in fade-in"
+                  >
+                    <span
+                      className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm"
+                      style={{ backgroundColor: selectedCategory.color }}
+                    />
+                    <Settings2 className="w-3.5 h-3.5 text-indigo-400" />
+                    <span className="max-w-[140px] truncate">{selectedCategory.name} Options</span>
+                  </button>
+                </Tooltip>
               ) : (
-                activeBoard.categories.map(cat => {
-                  const isSelected = selectedCategoryId === cat.id;
-                  return (
-                    <button
-                      key={cat.id}
-                      type="button"
-                      onClick={() => handleSelectCategory(cat.id)}
-                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold cursor-pointer transition-all shrink-0 ${
-                        isSelected
-                          ? 'bg-neutral-800 text-white ring-2 ring-indigo-500/80 shadow-sm'
-                          : 'text-neutral-300 hover:bg-neutral-800/60 bg-neutral-950/80 border border-neutral-800'
-                      }`}
-                      title={`Click to focus comparisons on ${cat.name}`}
-                    >
-                      <span
-                        className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm"
-                        style={{ backgroundColor: cat.color }}
-                      />
-                      <span className="max-w-[100px] truncate">{cat.name}</span>
-                    </button>
-                  );
-                })
+                <span className="text-xs text-neutral-500 italic">Click any pie slice</span>
               )}
             </div>
           </div>
@@ -787,6 +788,15 @@ export default function App() {
         achieveDist={achieveDist}
         isOpen={isPrintOpen}
         onClose={() => setIsPrintOpen(false)}
+      />
+
+      {/* Category Options Modal (Name, Color, Delete with Confirmation) */}
+      <CategoryOptionsModal
+        category={selectedCategory}
+        isOpen={showCategoryOptionsModal}
+        onClose={() => setShowCategoryOptionsModal(false)}
+        onUpdateCategory={handleUpdateCategory}
+        onDeleteCategory={handleRemoveCategory}
       />
     </div>
   );

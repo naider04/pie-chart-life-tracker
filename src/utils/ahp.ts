@@ -131,6 +131,7 @@ export function calculateDistribution(
 
 /**
  * Returns distinct default colors for categories when user adds new ones.
+ * Expanded palette with 32 distinct and balanced colors across all color spaces.
  */
 export const PALETTE = [
   '#6366f1', // Indigo
@@ -145,6 +146,26 @@ export const PALETTE = [
   '#84cc16', // Lime
   '#e11d48', // Rose
   '#64748b', // Slate
+  '#a855f7', // Violet
+  '#22c55e', // Green
+  '#eab308', // Yellow
+  '#d946ef', // Fuchsia
+  '#0ea5e9', // Sky
+  '#f43f5e', // Crimson
+  '#2dd4bf', // Aqua
+  '#fb923c', // Coral
+  '#4f46e5', // Deep Indigo
+  '#059669', // Deep Emerald
+  '#d97706', // Warm Amber
+  '#db2777', // Deep Pink
+  '#7c3aed', // Deep Purple
+  '#0284c7', // Ocean Blue
+  '#65a30d', // Forest Lime
+  '#be123c', // Ruby
+  '#475569', // Dark Slate
+  '#16a34a', // Leaf Green
+  '#ca8a04', // Bronze Gold
+  '#c026d3', // Deep Magenta
 ];
 
 export function getNextColor(existingCount: number): string {

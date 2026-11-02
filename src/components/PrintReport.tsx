@@ -1,6 +1,6 @@
-import React, { useRef } from 'react';
+import React from 'react';
 import { Board, CategoryDistribution } from '../types';
-import { Printer, X, Download } from 'lucide-react';
+import { Printer, X } from 'lucide-react';
 import { PieChart } from './PieChart';
 import { Tooltip } from './Tooltip';
 
@@ -41,7 +41,7 @@ export const PrintReport: React.FC<PrintReportProps> = ({
         <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-800 bg-neutral-950 no-print">
           <div className="flex items-center gap-2">
             <Printer className="w-5 h-5 text-indigo-400" />
-            <h3 className="font-semibold text-neutral-100 text-sm">Print Charts & Alignment Report</h3>
+            <h3 className="font-semibold text-neutral-100 text-sm">Print Charts</h3>
           </div>
 
           <div className="flex items-center gap-2">
@@ -96,99 +96,42 @@ export const PrintReport: React.FC<PrintReportProps> = ({
           </div>
 
           {/* The 3 Pie Charts Side by Side */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="border border-neutral-200 rounded-xl p-4 bg-neutral-50/50 flex flex-col items-center">
-              <h2 className="text-xs font-bold uppercase tracking-wider text-neutral-700 mb-2">
+              <h2 className="text-xs font-bold uppercase tracking-wider text-neutral-700 mb-3">
                 1. Present Reality
               </h2>
               <PieChart
                 title=""
                 data={presentDist}
-                size={180}
+                size={200}
                 className="bg-transparent border-0 p-0 shadow-none"
               />
             </div>
 
             <div className="border border-neutral-200 rounded-xl p-4 bg-neutral-50/50 flex flex-col items-center">
-              <h2 className="text-xs font-bold uppercase tracking-wider text-neutral-700 mb-2">
+              <h2 className="text-xs font-bold uppercase tracking-wider text-neutral-700 mb-3">
                 2. Intended Focus
               </h2>
               <PieChart
                 title=""
                 data={focusDist}
-                size={180}
+                size={200}
                 className="bg-transparent border-0 p-0 shadow-none"
               />
             </div>
 
             <div className="border border-neutral-200 rounded-xl p-4 bg-neutral-50/50 flex flex-col items-center">
-              <h2 className="text-xs font-bold uppercase tracking-wider text-neutral-700 mb-2">
+              <h2 className="text-xs font-bold uppercase tracking-wider text-neutral-700 mb-3">
                 3. Target Goal
               </h2>
               <PieChart
                 title=""
                 data={achieveDist}
-                size={180}
+                size={200}
                 className="bg-transparent border-0 p-0 shadow-none"
               />
             </div>
-          </div>
-
-          {/* Comprehensive Comparison Breakdown Table */}
-          <div className="border border-neutral-200 rounded-xl overflow-hidden mb-6">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-neutral-100 text-neutral-700 border-b border-neutral-200 font-semibold">
-                <tr>
-                  <th className="py-2.5 px-4">Category</th>
-                  <th className="py-2.5 px-3 text-right">Present %</th>
-                  <th className="py-2.5 px-3 text-right">Focus %</th>
-                  <th className="py-2.5 px-3 text-right">Target %</th>
-                  <th className="py-2.5 px-4 text-right">Net Shift (Target - Present)</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-neutral-200">
-                {board.categories.map(cat => {
-                  const p = presentDist.find(d => d.categoryId === cat.id)?.percentage || 0;
-                  const f = focusDist.find(d => d.categoryId === cat.id)?.percentage || 0;
-                  const a = achieveDist.find(d => d.categoryId === cat.id)?.percentage || 0;
-                  const delta = Number((a - p).toFixed(1));
-
-                  return (
-                    <tr key={cat.id} className="hover:bg-neutral-50/80">
-                      <td className="py-2.5 px-4 flex items-center gap-2">
-                        <span
-                          className="w-2.5 h-2.5 rounded-full shrink-0"
-                          style={{ backgroundColor: cat.color }}
-                        />
-                        <span className="font-semibold text-neutral-900">{cat.name}</span>
-                      </td>
-                      <td className="py-2.5 px-3 text-right font-mono text-neutral-700">{p}%</td>
-                      <td className="py-2.5 px-3 text-right font-mono text-neutral-700">{f}%</td>
-                      <td className="py-2.5 px-3 text-right font-mono text-neutral-900 font-bold">{a}%</td>
-                      <td className="py-2.5 px-4 text-right font-mono font-semibold">
-                        <span
-                          className={
-                            delta > 0
-                              ? 'text-emerald-600'
-                              : delta < 0
-                              ? 'text-rose-600'
-                              : 'text-neutral-500'
-                          }
-                        >
-                          {delta > 0 ? `+${delta}%` : `${delta}%`}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Footer */}
-          <div className="pt-4 border-t border-neutral-200 flex items-center justify-between text-[11px] text-neutral-500">
-            <span>Generated via Triad Priority System</span>
-            <span>Relative paired comparison method</span>
           </div>
         </div>
       </div>

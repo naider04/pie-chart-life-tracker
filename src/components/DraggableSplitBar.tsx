@@ -157,12 +157,12 @@ export const DraggableSplitBar: React.FC<DraggableSplitBarProps> = ({
 
         {/* Draggable Divider Line in the Middle */}
         <div
-          className="absolute top-0 bottom-0 -ml-[2px] w-[4px] bg-neutral-200 z-20 flex items-center justify-center pointer-events-none transition-transform"
+          className="absolute top-0 bottom-0 w-[2px] bg-neutral-200 z-20 flex items-center justify-center pointer-events-none -translate-x-1/2"
           style={{ left: `${pctA}%` }}
         >
           {/* Tactile Handle Grip - taller & wider */}
           <div
-            className={`w-5 h-10 rounded-full border border-neutral-700 bg-neutral-900 shadow-lg flex items-center justify-center -translate-x-[8px] transition-all ${
+            className={`w-5 h-10 rounded-full border border-neutral-700 bg-neutral-900 shadow-lg flex items-center justify-center transition-all ${
               isDragging ? 'scale-110 bg-white border-white text-neutral-900' : 'text-neutral-400 group-hover:border-neutral-500'
             }`}
           >
