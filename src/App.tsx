@@ -15,6 +15,7 @@ import {
   persistBoard,
   getDueCharts,
   clampSnapshotInterval,
+  syncTodaySnapshot,
 } from './services/storage';
 import { calculateDistribution, setPairValue } from './utils/ahp';
 import { PieChart } from './components/PieChart';
@@ -24,8 +25,9 @@ import { TimelineHistory } from './components/TimelineHistory';
 import { PrintReport } from './components/PrintReport';
 import { CategoryOptionsModal } from './components/CategoryOptionsModal';
 import { BoardSelector } from './components/BoardSelector';
+import { MonthGrid } from './components/MonthGrid';
 import { Tooltip } from './components/Tooltip';
-import { Printer, Cloud, Sparkles, SlidersHorizontal, History, TrendingUp, Settings2 } from 'lucide-react';
+import { Printer, Cloud, Sparkles, SlidersHorizontal, History, TrendingUp, Settings2, CalendarDays } from 'lucide-react';
 import {
   initFirebase,
   saveFirebaseConfig,
@@ -44,7 +46,7 @@ export default function App() {
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [clickOrder, setClickOrder] = useState<string[]>([]);
   const [isPrintOpen, setIsPrintOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'compare' | 'timeline'>('compare');
+  const [activeTab, setActiveTab] = useState<'compare' | 'timeline' | 'month'>('compare');
   const [showCategoryOptionsModal, setShowCategoryOptionsModal] = useState(false);
   const [showCloudModal, setShowCloudModal] = useState(false);
   const [firebaseConfigInput, setFirebaseConfigInput] = useState<FirebaseSyncConfig>({});
@@ -159,6 +161,35 @@ export default function App() {
     if (!activeBoard) return [] as ChartType[];
     return getDueCharts(activeBoard);
   }, [activeBoard]);
+
+  // Automatically capture / update today's snapshot with whatever the user currently has in their graph,
+  // so the last configuration of each day automatically remains recorded for that day.
+  useEffect(() => {
+    if (!activeBoard || activeBoard.categories.length === 0) return;
+
+    const timer = setTimeout(() => {
+      setBoards(prevBoards => {
+        const board = prevBoards.find(b => b.id === activeBoard.id);
+        if (!board) return prevBoards;
+
+        const syncedBoard = syncTodaySnapshot(board);
+        if (JSON.stringify(syncedBoard.snapshots) === JSON.stringify(board.snapshots)) {
+          return prevBoards;
+        }
+
+        saveBoards(prevBoards.map(b => (b.id === syncedBoard.id ? syncedBoard : b)));
+        return prevBoards.map(b => (b.id === syncedBoard.id ? syncedBoard : b));
+      });
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [
+    activeBoard?.id,
+    activeBoard?.categories,
+    activeBoard?.presentPairs,
+    activeBoard?.focusPairs,
+    activeBoard?.achievePairs,
+  ]);
 
   // Board operations
   const handleSelectBoard = (id: string) => {
@@ -457,6 +488,21 @@ export default function App() {
                 )}
               </button>
             </Tooltip>
+
+            <Tooltip content="Month Grid - Full Screen Daily Present History" position="bottom">
+              <button
+                type="button"
+                onClick={() => setActiveTab('month')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                  activeTab === 'month'
+                    ? 'bg-neutral-800 text-neutral-100 shadow-sm border border-neutral-700/60'
+                    : 'text-neutral-400 hover:text-neutral-200'
+                }`}
+              >
+                <CalendarDays className="w-3.5 h-3.5" />
+                <span>Month Grid</span>
+              </button>
+            </Tooltip>
           </div>
 
           <Tooltip content="Print 3 charts report" position="bottom">
@@ -484,8 +530,13 @@ export default function App() {
         </div>
       </header>
 
-      {/* Main Dual-Pane Dashboard: Sliders on the Left, 3 Pie Charts on the Right */}
-      <main className="flex-1 min-h-0 p-3 md:p-4 grid grid-cols-1 lg:grid-cols-12 gap-3 md:gap-4 overflow-hidden">
+      {/* Main View: Full-Screen Month Grid OR Dual-Pane Dashboard */}
+      {activeTab === 'month' ? (
+        <main className="flex-1 min-h-0 p-3 md:p-4 overflow-hidden flex flex-col">
+          <MonthGrid board={activeBoard} presentDist={presentDist} />
+        </main>
+      ) : (
+        <main className="flex-1 min-h-0 p-3 md:p-4 grid grid-cols-1 lg:grid-cols-12 gap-3 md:gap-4 overflow-hidden">
         {/* Left Column: Categories + Sliders OR Timeline (45% on desktop) */}
         <section className="lg:col-span-5 flex flex-col h-full min-h-0 gap-2.5 overflow-hidden">
           {/* Categories Quick Input & Badges */}
@@ -671,6 +722,7 @@ export default function App() {
           )}
         </section>
       </main>
+      )}
 
       {/* Cloud Sync Modal */}
       {showCloudModal && (

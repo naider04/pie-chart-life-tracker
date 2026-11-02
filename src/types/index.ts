@@ -21,9 +21,11 @@ export interface CategoryDistribution {
 export interface BoardSnapshot {
   id: string;
   boardId: string;
-  date: string;         // YYYY-MM-DD
+  date: string;         // formatted date string
+  dateKey?: string;     // YYYY-MM-DD
   timestamp: number;    // epoch ms
   note?: string;
+  isAuto?: boolean;     // whether recorded automatically from live graph
   presentDist: Record<string, number>; // categoryId -> percentage
   focusDist: Record<string, number>;
   achieveDist: Record<string, number>;

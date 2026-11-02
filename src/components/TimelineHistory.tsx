@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { BoardSnapshot, Category, ChartType, CHART_TYPES, SnapshotIntervals } from '../types';
 import {
   Calendar,
@@ -57,6 +57,89 @@ function formatRelative(timestamp: number | null): string {
   const days = Math.floor(hours / 24);
   return `${days}d ago`;
 }
+
+interface IntervalNumberInputProps {
+  value: number;
+  min: number;
+  max: number;
+  chartLabel: string;
+  onCommit: (days: number) => void;
+}
+
+const IntervalNumberInput: React.FC<IntervalNumberInputProps> = ({
+  value,
+  min,
+  max,
+  chartLabel,
+  onCommit,
+}) => {
+  const [draft, setDraft] = useState<string>(String(value));
+
+  // Sync draft when external value changes (e.g., preset clicked or board changed)
+  useEffect(() => {
+    if (draft.trim() !== '' && Number(draft) === value) {
+      return;
+    }
+    setDraft(String(value));
+  }, [value]);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value;
+    setDraft(raw);
+
+    // If empty (user just deleted the number), do NOT automatically type 1 or commit immediately!
+    if (raw.trim() === '') {
+      return;
+    }
+
+    const parsed = parseInt(raw, 10);
+    // Only commit immediately if it's a valid integer within the allowed range
+    if (!Number.isNaN(parsed) && parsed >= min && parsed <= max) {
+      onCommit(parsed);
+    }
+  };
+
+  const handleBlur = () => {
+    const trimmed = draft.trim();
+    if (trimmed === '') {
+      // Restore the valid value on blur so the field isn't left permanently empty
+      setDraft(String(value));
+      return;
+    }
+
+    const parsed = parseInt(trimmed, 10);
+    if (Number.isNaN(parsed)) {
+      setDraft(String(value));
+    } else {
+      const clamped = Math.min(max, Math.max(min, parsed));
+      setDraft(String(clamped));
+      if (clamped !== value) {
+        onCommit(clamped);
+      }
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      (e.target as HTMLInputElement).blur();
+    }
+  };
+
+  return (
+    <input
+      type="number"
+      min={min}
+      max={max}
+      value={draft}
+      placeholder="—"
+      onChange={handleChange}
+      onBlur={handleBlur}
+      onKeyDown={handleKeyDown}
+      className="w-14 bg-neutral-900 border border-neutral-800 rounded-lg px-2 py-1 text-xs text-neutral-100 font-mono focus:outline-none focus:border-indigo-500 placeholder-neutral-600"
+      aria-label={`Snapshot interval in days for ${chartLabel}`}
+    />
+  );
+};
 
 export const TimelineHistory: React.FC<TimelineHistoryProps> = ({
   snapshots,
@@ -168,17 +251,12 @@ export const TimelineHistory: React.FC<TimelineHistoryProps> = ({
 
                 <div className="flex items-center gap-1.5 mt-2">
                   <span className="text-[10px] text-neutral-500">Every</span>
-                  <input
-                    type="number"
+                  <IntervalNumberInput
+                    value={days}
                     min={MIN_SNAPSHOT_INTERVAL_DAYS}
                     max={MAX_SNAPSHOT_INTERVAL_DAYS}
-                    value={days}
-                    onChange={e => {
-                      const next = Number(e.target.value);
-                      if (!Number.isNaN(next)) onUpdateInterval(chart, next);
-                    }}
-                    className="w-14 bg-neutral-900 border border-neutral-800 rounded-lg px-2 py-1 text-xs text-neutral-100 font-mono focus:outline-none focus:border-indigo-500"
-                    aria-label={`Snapshot interval in days for ${meta.label}`}
+                    chartLabel={meta.label}
+                    onCommit={next => onUpdateInterval(chart, next)}
                   />
                   <span className="text-[10px] text-neutral-500">days</span>
                   <div className="flex flex-wrap gap-1 ml-auto">

@@ -144,6 +144,34 @@ export function isSnapshotDue(board: Board): boolean {
 }
 
 /**
+ * Returns a local date key in YYYY-MM-DD format based on the user's timezone.
+ */
+export function getLocalDateKey(dateOrTimestamp: number | Date = Date.now()): string {
+  const d = typeof dateOrTimestamp === 'number' ? new Date(dateOrTimestamp) : dateOrTimestamp;
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Returns the last snapshot recorded on a specific date (YYYY-MM-DD).
+ * If multiple snapshots were taken on that day, the one with the latest timestamp is returned.
+ */
+export function getSnapshotForDay(
+  snapshots: BoardSnapshot[],
+  dateKey: string
+): BoardSnapshot | null {
+  if (!snapshots || snapshots.length === 0) return null;
+  const matches = snapshots.filter(s => {
+    if (s.dateKey) return s.dateKey === dateKey;
+    return getLocalDateKey(s.timestamp) === dateKey;
+  });
+  if (matches.length === 0) return null;
+  return matches.reduce((latest, curr) => (curr.timestamp > latest.timestamp ? curr : latest));
+}
+
+/**
  * Creates a new historical snapshot. The distributions of all 3 charts are
  * stored, but `capturedCharts` records which ones this check-in was for.
  */
@@ -171,11 +199,13 @@ export function captureSnapshot(
     day: 'numeric',
     year: 'numeric',
   });
+  const dateKey = getLocalDateKey(now);
 
   return {
     id: 'snap_' + Math.random().toString(36).substring(2, 10),
     boardId: board.id,
     date: dateStr,
+    dateKey,
     timestamp: Date.now(),
     note,
     presentDist: presentMap,
@@ -183,6 +213,69 @@ export function captureSnapshot(
     achieveDist: achieveMap,
     categories: [...board.categories],
     capturedCharts: charts.length > 0 ? [...charts] : [...CHART_TYPES],
+  };
+}
+
+/**
+ * Automatically captures or updates today's snapshot with whatever the user currently
+ * has in their graph, ensuring the last state of today is preserved for this day.
+ */
+export function syncTodaySnapshot(board: Board): Board {
+  if (!board.categories || board.categories.length === 0) return board;
+
+  const now = new Date();
+  const todayKey = getLocalDateKey(now);
+  const dateStr = now.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+
+  const presentDist = calculateDistribution(board.categories, board.presentPairs);
+  const focusDist = calculateDistribution(board.categories, board.focusPairs);
+  const achieveDist = calculateDistribution(board.categories, board.achievePairs);
+
+  const presentMap: Record<string, number> = {};
+  presentDist.forEach(d => { presentMap[d.categoryId] = d.percentage; });
+
+  const focusMap: Record<string, number> = {};
+  focusDist.forEach(d => { focusMap[d.categoryId] = d.percentage; });
+
+  const achieveMap: Record<string, number> = {};
+  achieveDist.forEach(d => { achieveMap[d.categoryId] = d.percentage; });
+
+  const snapshots = [...(board.snapshots || [])];
+  // Check if today already has a snapshot
+  const existingIndex = snapshots.findIndex(s => {
+    if (s.dateKey) return s.dateKey === todayKey;
+    return getLocalDateKey(s.timestamp) === todayKey;
+  });
+
+  const snapshotRecord: BoardSnapshot = {
+    id: existingIndex >= 0 ? snapshots[existingIndex].id : 'snap_' + Math.random().toString(36).substring(2, 10),
+    boardId: board.id,
+    date: dateStr,
+    dateKey: todayKey,
+    timestamp: Date.now(),
+    isAuto: true,
+    note: existingIndex >= 0 ? snapshots[existingIndex].note : undefined,
+    presentDist: presentMap,
+    focusDist: focusMap,
+    achieveDist: achieveMap,
+    categories: [...board.categories],
+    capturedCharts: [...CHART_TYPES],
+  };
+
+  if (existingIndex >= 0) {
+    snapshots[existingIndex] = snapshotRecord;
+  } else {
+    snapshots.push(snapshotRecord);
+  }
+
+  return {
+    ...board,
+    snapshots,
+    updatedAt: Date.now(),
   };
 }
 
